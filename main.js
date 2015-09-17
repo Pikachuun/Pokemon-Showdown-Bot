@@ -33,8 +33,8 @@ function runNpm(command) {
 
 // First dependencies and welcome message
 try {
-	require('babel/register')({loose: 'all'});
 	require('sugar');
+	require('es6-shim');
 	global.colors = require('colors');
 } catch (e) {
 	console.log('Dependencies are not installed!');
@@ -114,7 +114,7 @@ if (Config.watchconfig) {
 		if (curr.mtime <= prev.mtime) return;
 		try {
 			delete require.cache[require.resolve('./config.js')];
-			Config = require('./config.js');
+			global.Config = require('./config.js');
 			info('reloaded config.js');
 			checkCommandCharacter();
 		} catch (e) {}
@@ -137,7 +137,7 @@ var lastSentAt = 0;
 
 global.send = function (data) {
 	if (!data || !Connection.connected) return false;
-	
+
 	var now = Date.now();
 	if (now < lastSentAt + MESSAGE_THROTTLE - 5) {
 		queue.push(data);
@@ -183,7 +183,7 @@ var connect = function (retry) {
 	});
 
 	ws.on('connect', function (con) {
-		Connection = con;
+		global.Connection = con;
 		ok('connected to server ' + Config.server);
 
 		con.on('error', function (err) {
