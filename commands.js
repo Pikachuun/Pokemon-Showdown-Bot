@@ -4,11 +4,12 @@
  * @license MIT license
  */
 
+var fs = require('fs');
 var http = require('http');
-
+var https, csv;
 if (Config.serverid === 'showdown') {
-	var https = require('https');
-	var csv = require('csv-parse');
+	https = require('https');
+	csv = require('csv-parse');
 }
 
 // .set constants
@@ -44,7 +45,7 @@ const CONFIGURABLE_COMMAND_LEVELS = {
 	'true': true
 };
 
-for (let i in Config.groups) {
+for (var i in Config.groups) {
 	if (i !== ' ') CONFIGURABLE_COMMAND_LEVELS[i] = i;
 }
 
@@ -89,7 +90,7 @@ exports.commands = {
 		if (!user.isExcepted()) return false;
 		try {
 			this.uncacheTree('./commands.js');
-			Commands = require('./commands.js').commands;
+			global.Commands = require('./commands.js').commands;
 			this.say(room, 'Commands reloaded.');
 		} catch (e) {
 			error('failed to reload: ' + e.stack);
@@ -114,7 +115,7 @@ exports.commands = {
 	js: function (arg, user, room) {
 		if (!user.isExcepted()) return false;
 		try {
-			let result = eval(arg.trim());
+			var result = eval(arg.trim());
 			this.say(room, JSON.stringify(result));
 		} catch (e) {
 			this.say(room, e.name + ": " + e.message);
@@ -127,8 +128,8 @@ exports.commands = {
 		var buffer = [];
 		var uptime = ~~(process.uptime());
 		do {
-			let divisor = divisors.pop();
-			let unit = uptime % divisor;
+			var divisor = divisors.pop();
+			var unit = uptime % divisor;
 			buffer.push(unit > 1 ? unit + ' ' + units.pop() + 's' : unit + ' ' + units.pop());
 			uptime = ~~(uptime / divisor);
 		} while (uptime);
@@ -152,7 +153,7 @@ exports.commands = {
 		}
 
 		this.say(room, text);
-	}, 
+	},
 
 
 	/**
@@ -169,7 +170,7 @@ exports.commands = {
 		var cmd = toId(opts[0]);
 		var roomid = room.id;
 		if (cmd === 'm' || cmd === 'mod' || cmd === 'modding') {
-			let modOpt;
+			var modOpt;
 			if (!opts[1] || !CONFIGURABLE_MODERATION_OPTIONS[(modOpt = toId(opts[1]))]) {
 				return this.say(room, 'Incorrect command: correct syntax is ' + Config.commandcharacter + 'set mod, [' +
 					Object.keys(CONFIGURABLE_MODERATION_OPTIONS).join('/') + '](, [on/off])');
@@ -180,7 +181,7 @@ exports.commands = {
 			if (!this.settings.modding) this.settings.modding = {};
 			if (!this.settings.modding[roomid]) this.settings.modding[roomid] = {};
 
-			let setting = toId(opts[2]);
+			var setting = toId(opts[2]);
 			if (setting === 'on') {
 				delete this.settings.modding[roomid][modOpt];
 				if (Object.isEmpty(this.settings.modding[roomid])) delete this.settings.modding[roomid];
@@ -213,7 +214,7 @@ exports.commands = {
 		}
 
 		if (!opts[1]) {
-			let msg = '' + Config.commandcharacter + '' + cmd + ' is ';
+			var msg = '' + Config.commandcharacter + '' + cmd + ' is ';
 			if (!this.settings[cmd] || (!(roomid in this.settings[cmd]))) {
 				msg += 'available for users of rank ' + ((cmd === 'autoban' || cmd === 'banword') ? '#' : Config.defaultrank) + ' and above.';
 			} else if (this.settings[cmd][roomid] in CONFIGURABLE_COMMAND_LEVELS) {
@@ -225,7 +226,7 @@ exports.commands = {
 			return this.say(room, msg);
 		}
 
-		let setting = opts[1].trim();
+		var setting = opts[1].trim();
 		if (!(setting in CONFIGURABLE_COMMAND_LEVELS)) return this.say(room, 'Unknown option: "' + setting + '". Valid settings are: off/disable/false, +, %, @, #, &, ~, on/enable/true.');
 		if (!this.settings[cmd]) this.settings[cmd] = {};
 		this.settings[cmd][roomid] = CONFIGURABLE_COMMAND_LEVELS[setting];
@@ -248,8 +249,8 @@ exports.commands = {
 		var illegalNick = [];
 		var alreadyAdded = [];
 		var roomid = room.id;
-		for (let u of arg) {
-			let tarUser = toId(u);
+		for (var i = 0; i < arg.length; i++) {
+			var tarUser = toId(arg[i]);
 			if (!tarUser || tarUser.length > 18) {
 				illegalNick.push(tarUser);
 			} else if (!this.blacklistUser(tarUser, roomid)) {
@@ -284,8 +285,8 @@ exports.commands = {
 		var removed = [];
 		var notRemoved = [];
 		var roomid = room.id;
-		for (let u of arg) {
-			let tarUser = toId(u);
+		for (var i = 0; i < arg.length; i++) {
+			var tarUser = toId(arg[i]);
 			if (!tarUser || tarUser.length > 18) {
 				notRemoved.push(tarUser);
 			} else if (!this.unblacklistUser(tarUser, roomid)) {
@@ -311,8 +312,9 @@ exports.commands = {
 		if (!Users.self.hasRank(room.id, '@')) return this.say(room, Users.self.name + ' requires rank of @ or higher to (un)blacklist.');
 		if (!arg) return this.say(room, 'You must specify a regular expression to (un)blacklist.');
 
+		var regexObj;
 		try {
-			new RegExp(arg, 'i');
+			regexObj = new RegExp(arg, 'i');
 		} catch (e) {
 			return this.say(room, e.message);
 		}
@@ -324,17 +326,14 @@ exports.commands = {
 		var regex = '/' + arg + '/i';
 		if (!this.blacklistUser(regex, room.id)) return this.say(room, '/' + regex + ' is already present in the blacklist.');
 
-		var regexObj = new RegExp(arg, 'i');
-		var users = room.users.entries();
 		var groups = Config.groups;
 		var selfid = Users.self.id;
 		var selfidx = groups[room.users.get(selfid)];
-		for (let u of users) {
-			let userid = u[0];
-			if (userid !== selfid && regexObj.test(userid) && groups[u[1]] < selfidx) {
+		room.users.forEach(function (value, userid) {
+			if (userid !== selfid && regexObj.test(userid) && groups[value] < selfidx) {
 				this.say(room, '/roomban ' + userid + ', Blacklisted user');
 			}
-		}
+		});
 
 		this.writeSettings();
 		this.say(room, '/modnote Regular expression ' + regex + ' was added to the blacklist by user ' + user.name + '.');
@@ -367,7 +366,7 @@ exports.commands = {
 		if (!blacklist) return this.say(room, text + 'No users are blacklisted in this room.');
 
 		if (!arg.length) {
-			let userlist = Object.keys(blacklist);
+			var userlist = Object.keys(blacklist);
 			if (!userlist.length) return this.say(room, text + 'No users are blacklisted in this room.');
 			return this.uploadToHastebin('The following users are banned from ' + roomid + ':\n\n' + userlist.join('\n'), function (link) {
 				if (link.startsWith('Error')) return this.say(room, text + link);
@@ -486,24 +485,7 @@ exports.commands = {
 	},
 	joke: function (arg, user, room) {
 		if (room === user || !user.canUse('joke', room.id)) return false;
-		var self = this;
-
-		var reqOpt = {
-			hostname: 'api.icndb.com',
-			path: '/jokes/random',
-			method: 'GET'
-		};
-		var req = http.request(reqOpt, function (res) {
-			res.on('data', function (chunk) {
-				try {
-					let data = JSON.parse(chunk);
-					self.say(room, data.value.joke.replace(/&quot;/g, "\""));
-				} catch (e) {
-					self.say(room, 'Sorry, couldn\'t fetch a random joke... :(');
-				}
-			});
-		});
-		req.end();
+		this.say(room, 'chuck norris jokes are overrated. you know what isn\'t? magikarp jokes');
 	},
 	usage: 'usagestats',
 	usagestats: function (arg, user, room) {
@@ -534,66 +516,66 @@ exports.commands = {
 		var rand = ~~(20 * Math.random());
 
 		switch (rand) {
-	 		case 0:
-				text += "Signs point to yes.";
-				break;
-	  		case 1:
-				text += "Yes.";
-				break;
-			case 2:
-				text += "Reply hazy, try again.";
-				break;
-			case 3:
-				text += "Without a doubt.";
-				break;
-			case 4:
-				text += "My sources say no.";
-				break;
-			case 5:
-				text += "As I see it, yes.";
-				break;
-			case 6:
-				text += "You may rely on it.";
-				break;
-			case 7:
-				text += "Concentrate and ask again.";
-				break;
-			case 8:
-				text += "Outlook not so good.";
-				break;
-			case 9:
-				text += "It is decidedly so.";
-				break;
-			case 10:
-				text += "Better not tell you now.";
-				break;
-			case 11:
-				text += "Very doubtful.";
-				break;
-			case 12:
-				text += "Yes - definitely.";
-				break;
-			case 13:
-				text += "It is certain.";
-				break; 
-			case 14:
-				text += "Cannot predict now.";
-				break;
-			case 15:
-				text += "Most likely.";
-				break;
-			case 16:
-				text += "Ask again later.";
-				break;
-			case 17:
-				text += "My reply is no.";
-				break;
-			case 18:
-				text += "Outlook good.";
-				break;
-			case 19:
-				text += "Don't count on it.";
-				break;
+		case 0:
+			text += "Signs point to yes.";
+			break;
+		case 1:
+			text += "Yes.";
+			break;
+		case 2:
+			text += "Reply hazy, try again.";
+			break;
+		case 3:
+			text += "Without a doubt.";
+			break;
+		case 4:
+			text += "My sources say no.";
+			break;
+		case 5:
+			text += "As I see it, yes.";
+			break;
+		case 6:
+			text += "You may rely on it.";
+			break;
+		case 7:
+			text += "Concentrate and ask again.";
+			break;
+		case 8:
+			text += "Outlook not so good.";
+			break;
+		case 9:
+			text += "It is decidedly so.";
+			break;
+		case 10:
+			text += "Better not tell you now.";
+			break;
+		case 11:
+			text += "Very doubtful.";
+			break;
+		case 12:
+			text += "Yes - definitely.";
+			break;
+		case 13:
+			text += "It is certain.";
+			break;
+		case 14:
+			text += "Cannot predict now.";
+			break;
+		case 15:
+			text += "Most likely.";
+			break;
+		case 16:
+			text += "Ask again later.";
+			break;
+		case 17:
+			text += "My reply is no.";
+			break;
+		case 18:
+			text += "Outlook good.";
+			break;
+		case 19:
+			text += "Don't count on it.";
+			break;
 		}
 
 		this.say(room, text);
@@ -607,7 +589,7 @@ exports.commands = {
 	espaol: 'esp',
 	ayuda: 'esp',
 	esp: function (arg, user, room) {
-		// links to relevant sites for the Wi-Fi room 
+		// links to relevant sites for the Wi-Fi room
 		if (Config.serverid !== 'showdown') return false;
 		var text = '';
 		if (room.id === 'espaol') {
@@ -640,7 +622,7 @@ exports.commands = {
 		this.say(room, text + (messages[toId(arg)] || ('Welcome to The Studio, a music sharing room on PS!. If you have any questions, feel free to PM a room staff member. Available commands for .studio: ' + Object.keys(messages).join(', '))));
 	},
 	wifi: function (arg, user, room) {
-		// links to relevant sites for the Wi-Fi room 
+		// links to relevant sites for the Wi-Fi room
 		if (Config.serverid !== 'showdown') return false;
 		var text = '';
 		if (room.id === 'wifi') {
@@ -654,9 +636,9 @@ exports.commands = {
 		if (!msgType) return this.say(room, text + 'Welcome to the Wi-Fi room! Links can be found here: http://pstradingroom.weebly.com/links.html');
 
 		switch (msgType) {
-		case 'intro': 
+		case 'intro':
 			return this.say(room, text + 'Here is an introduction to Wi-Fi: https://docs.google.com/document/d/1Lk29aFRX12qK0fwbTwria6JvBCjZwYosENqP2_3h-ac/edit');
-		case 'rules': 
+		case 'rules':
 			return this.say(room, text + 'The rules for the Wi-Fi room can be found here: http://pstradingroom.weebly.com/rules.html');
 		case 'faq':
 		case 'faqs':
@@ -688,7 +670,7 @@ exports.commands = {
 			if (!wifiRoom) return false;
 			if (!wifiRoom.data) wifiRoom.data = {
 				docRevs: ['', ''],
-				scammers : {},
+				scammers: {},
 				cloners: {}
 			};
 
@@ -697,15 +679,15 @@ exports.commands = {
 			this.getDocMeta('0AvygZBLXTtZZdFFfZ3hhVUplZm5MSGljTTJLQmJScEE', function (err, meta) {
 				if (err) return self.say(room, text + 'An error occured while processing your command.');
 
-				let fc = arg[1].replace(/\D/g, '');
+				var fc = arg[1].replace(/\D/g, '');
 				if (fc.length !== 12) return self.say(room, text + '"' + arg[1] + '" is not a valid FC.');
 
 				if (wifiData.docRevs[0] === meta.version) {
-					let ids = wifiData.scammers[fc];
+					var ids = wifiData.scammers[fc];
 					if (!ids) return self.say(room, text + 'This FC does not belong to a known scammer.');
 
 					text += '**The FC ' + arg[1] + ' belongs to a known scammer:** ';
-					let max = 300 - text.length;
+					var max = 300 - text.length;
 					if (ids.length >= max) return self.say(room, text + ids.substr(0, max - 3) + '...');
 					return self.say(room, text + ids + '.');
 				}
@@ -714,21 +696,21 @@ exports.commands = {
 				self.getDocCsv(meta, function (data) {
 					csv(data, function (err, data) {
 						if (err) return self.say(room, text + 'An error occured while processing your command.');
-						for (let scammer of data) {
-							let fc = scammer[1].replace(/\D/g, '');
+						for (var i = 0; i < data.length; i++) {
+							var fc = data[i][1].replace(/\D/g, '');
 							if (fc && fc.length % 12 === 0) {
-								let ids = scammer[0];
-								for (let j = 0; j < fc.length; j += 12) {
+								var ids = data[i][0];
+								for (var j = 0; j < fc.length; j += 12) {
 									wifiData.scammers[fc.substr(j, 12)] = ids;
 								}
 							}
 						}
 
-						let ids = wifiData.scammers[fc];
+						var ids = wifiData.scammers[fc];
 						if (!ids) return self.say(room, text + 'This FC does not belong to a known scammer.');
 
 						text += '**The FC ' + arg[1] + ' belongs to a known scammer:** ';
-						let max = 300 - text.length;
+						var max = 300 - text.length;
 						if (ids.length >= max) return self.say(room, text + ids.substr(0, max - 3) + '...');
 						self.say(room, text + ids + '.');
 					});
@@ -743,7 +725,7 @@ exports.commands = {
 			if (!wifiRoom) return false;
 			if (!wifiRoom.data) wifiRoom.data = {
 				docRevs: ['', ''],
-				scammers : {},
+				scammers: {},
 				cloners: {}
 			};
 
@@ -754,9 +736,9 @@ exports.commands = {
 
 				if (!text && room !== user) text += '/pm ' + user.id + ', ';
 				if (wifiData.docRevs[1] === meta.version) {
-					let cloners = wifiData.cloners;
-					let found = [];
-					for (let id in cloners) {
+					var cloners = wifiData.cloners;
+					var found = [];
+					for (var id in cloners) {
 						if (wifiRoom.users.get(id)) found.push(cloners[id]);
 					}
 
@@ -771,13 +753,14 @@ exports.commands = {
 					csv(data, function (err, data) {
 						if (err) return self.say(room, text + 'An error occured while processing your command.');
 
-						let cloners = wifiData.cloners = {};
-						let found = [];
-						for (let cloner of data) {
-							let fc = cloner[1].replace(/\D/g, '');
+						var cloners = wifiData.cloners = {};
+						var found = [];
+						for (var i = 0; i < data.length; i++) {
+							var cloner = data[i];
+							var fc = cloner[1].replace(/\D/g, '');
 							if (fc && fc.length === 12) {
-								let id = toId(cloner[0]);
-								let clonerText = 'Name: ' + cloner[0] + ' | FC: ' + cloner[1] + ' | IGN: ' + cloner[2];
+								var id = toId(cloner[0]);
+								var clonerText = 'Name: ' + cloner[0] + ' | FC: ' + cloner[1] + ' | IGN: ' + cloner[2];
 								clonerText = clonerText.replace(/\n/g, '');
 								cloners[id] = clonerText;
 								if (wifiRoom.users.get(id)) {
@@ -894,8 +877,7 @@ exports.commands = {
 		rapper2 = rapper2.id;
 		var willVoiceR1 = (room.users.get(rapper1) === ' ');
 		var willVoiceR2 = (room.users.get(rapper2) === ' ');
-		var doesNotModFlooding = this.settings.modding && this.settings.modding[room.id]
-				&& this.settings.modding[room.id] === false;
+		var doesNotModFlooding = this.settings.modding && this.settings.modding[room.id] && this.settings.modding[room.id] === false;
 
 		if (willVoiceR1) this.say(room, '/roomvoice ' + rapper1);
 		if (willVoiceR2) this.say(room, '/roomvoice ' + rapper2);
@@ -935,4 +917,242 @@ exports.commands = {
 		this.buzzed = '';
 		this.say(room, 'The buzzer has been reset.');
 	},
+
+	/**
+	 * Choon commands
+	 *
+	 * denko
+	 */
+	
+	counter: function(arg, user, room) {
+		var text = '';
+		if (room !== user && !user.canUse('counter', room.id)) text += '/pm ' + user.name + ', ';
+		
+		if (!global.counter || !global.counter.num) global.counter = {num: 1};
+		else global.counter.num++;
+		
+		if (global.counter.num === 1) return this.say(room, text + 'This is the 1st time this command has been run, probably o3o');
+		if (global.counter.num === 2) return this.say(room, text + 'This is the 2nd time this command has been run, probably o3o');
+		if (global.counter.num === 3) return this.say(room, text + 'This is the 3rd time this command has been run, probably o3o');
+		return this.say(room, text + 'This command has been run ' + global.counter.num + ' times now! Neat right o3o');
+	},
+	cri: function (arg, user, room) {
+		if (!user.canUse('hello', room.id)) return false;
+		this.say(room, ';_;');
+	},
+	hello: function (arg, user, room) {
+		if (!user.canUse('hello', room.id)) return false;
+		if (!!Math.floor(Math.random()*10)) this.say(room, 'sup nerds');
+		else this.say(room, 'Hello! This is a test command made to see if the bot is working.');
+	},
+	moneys: function (arg, user, room) {
+		var text = '';
+		if (room !== user && !user.canUse('moneys', room.id)) text += '/pm ' + user + ', ';
+		var moneystxt = fs.readFileSync('moneys.txt').toString();
+		var moneysmat = moneystxt.split('madooka magooka is an animu. moogn is a game. moko is a bird.\n\n')[1].split('\n');
+		var tage = (toId(arg)) ? toId(arg) : toId(user.name);
+		var tage2 = (tage === toId(user.name)) ? user.name : arg;
+		var found = -1;
+		for (var i = 0; i < moneysmat.length; i++) {
+			moneysmat[i] = moneysmat[i].split(': ');
+			if (tage === moneysmat[i][0]) {
+				found = i;
+			}
+		}
+		if (found > -1) {
+			this.say(room, text + tage2 + ' has ' + moneysmat[found][1] + ' moneys.');
+		} else if (tage === toId(user.name)) {
+			this.say(room, text + tage2 + ' has been given 10 moneys to start with.');
+			fs.writeFileSync("moneys.txt", moneystxt + "\n" + tage + ": 10");
+		} else {
+			this.say(room, text + tage2 + ' doesn\'t have any moneys right now that we know about ;_;');
+		}
+	},
+	givemoneys: function (arg, user, room) {
+		var text = '';
+		if (room === user || toId(user.name) !== 'pikachuun') return false;
+		if (!arg[1]) {
+			this.say(room, "Syntax: ('.w.') givemoneys username amount");
+			return false;
+		}
+		var moneystxt = fs.readFileSync('moneys.txt').toString();
+		var moneysmat = moneystxt.split('madooka magooka is an animu. moogn is a game. moko is a bird.\n\n')[1].split('\n');
+		var found = -1;
+		var overwrite = 'madooka magooka is an animu. moogn is a game. moko is a bird.\n';
+		var arr = arg.split(' ');
+		for (var i = 0; i < moneysmat.length; i++) {
+			moneysmat[i] = moneysmat[i].split(': ');
+			if (toId(arr[0]) === moneysmat[i][0]) {
+				found = i;
+			}
+		}
+		if (found === -1) {
+			this.say(room, arr[0] + " hasn't gotten any moneys yet! Get him/her to type in ('.w.') moneys to get him/her started.");
+			return false;
+		}
+		var moneysadd = parseInt(arr[1], 10);
+		if (!moneysadd) {
+			this.say(room, arr[1] + " is not a number ._.");
+			return false;
+		}
+		moneysmat[found][1] = parseInt(moneysmat[found][1]) + moneysadd;
+		this.say(room, arr[0] + ' has been given ' + moneysadd + ' moneys. ' + arr[0] + ' now has ' + String(moneysmat[found][1]) + ' moneys.');
+		for (var j = 0; j < moneysmat.length; j++) {
+			overwrite += '\n' + moneysmat[j][0] + ': ' + moneysmat[j][1];
+		}
+		fs.writeFileSync("moneys.txt", overwrite);
+	},
+	dicegame: function (arg, user, room) {
+		if (room === user || toId(user.name) !== 'pikachuun') return false;
+		var arr = arg.split(', ');
+		if (!arr[1]) return this.say(room, "Syntax: ('.w.') dicegame p1, p2");
+		if (global.dicegame) return this.say(room, "There's already a dice game happening go watch that");
+		global.dicegame = {players: {}, pn: 0};
+		var id = '';
+		for (var i = 0; i < 2; i++) { //for (var i = 0; i < arr.length; i++) {
+			id = toId(arr[i]);
+			global.dicegame.players[id] = {id: arr[i], roll: false, out: false};
+			global.dicegame.pn++;
+		}
+		return this.say(room, "Let the dice games begin between the people that the starter just mentioned! Type in \"('.w.') diceroll\" to roll your dice. Highest number wins o3o");
+	},
+	diceroll: function (arg, user, room) {
+		if (room === user || !global.dicegame) return false;
+		var person = toId(user.name);
+		if (!global.dicegame.players[person] || global.dicegame.players[person].roll || global.dicegame.players[person].out) return false;
+		var dinnerroll = Math.floor(6*Math.random()) + 1;
+		global.dicegame.players[person].roll = dinnerroll;
+		this.say(room, user.name + " rolled a " + dinnerroll + "!");
+		
+		//Roll Maintenance Check
+		if (!global.dicegame.n) global.dicegame.n = 0;
+		if (!global.dicegame.thematrix) {
+			global.dicegame.thematrix = [dinnerroll];
+			global.dicegame.n++;
+		} else {
+			global.dicegame.thematrix[global.dicegame.n] = dinnerroll;
+			global.dicegame.n++;
+		}
+		for (var i in global.dicegame.players) {
+			if (!global.dicegame.players[i].roll && !global.dicegame.players[i].out) return false;
+		}
+		
+		//Final Calculations
+		var minroll = Infinity, maxroll = 0;
+		for (var l = global.dicegame.thematrix.length; l > -1; l--) {
+			if (global.dicegame.thematrix[l] < minroll) {
+				minroll = global.dicegame.thematrix[l];
+			}
+			if (global.dicegame.thematrix[l] > maxroll) {
+				maxroll = global.dicegame.thematrix[l];
+			}
+		}
+		if (minroll === maxroll) {
+			this.say(room, 'It was a draw, this time... NOW GO AGAIN O3O');
+			for (var j in global.dicegame.players) {
+				global.dicegame.players[j].roll = false;
+			}
+			return false;
+		}
+		
+		//Winner Determination
+		var pm = [];
+		var qm = [];
+		var pos = 0, qos = 0;
+		for (var k in global.dicegame.players) {
+			if (global.dicegame.players[k].roll === maxroll) {
+				pm[pos] = global.dicegame.players[k].id;
+				pos++;
+			} else {
+				qm[qos] = global.dicegame.players[k].id;
+				qos++;
+			}
+		}
+		if (pm.length === 1) {
+			this.say(room, pm[0] + ' wins!!!!! Thanks for puraying o3o');
+			if (pm[0] === undefined) {
+				this.say(room, '/pm Pikachuun, UNDEFINED ERROR: pm:' + pm.length + ',qm:' + qm.length + ',r:' + maxroll + ',' + minroll + ',q:' + qm[0]);
+			}
+			return global.dicegame = false;
+		} else if (pm.length > 1) {
+			var drawtext = '';
+			for (var p = 0; p < pm.length; p++) {
+				if (p === pm.length - 1) {
+					drawtext += pm[p] + '.';
+				} else {
+					drawtext += pm[p] + ', '
+				}
+			}
+			this.say(room, 'A draw occurred between the following users: ' + drawtext + ' Bug choon for more rounds');
+			return global.dicegame = false;
+		} else {
+			this.say(room, 'Error occurred: 0 Length Error');
+			this.say(room, '/pm Pikachuun, pm:' + pm.length + ',qm:' + qm.length + ',r:' + maxroll + ',' + minroll);
+			return global.dicegame = false;
+		}
+	},
+	gambl: function (arg, user, room) {
+		var text = "";
+		if (room !== user && toId(user.name) !== 'pikachuun') text += "/pm " + user.name + ", ";
+		if (!arg) return this.say(room, text + "Syntax: ('.w.') gambl moneys");
+		var bet = parseInt(arg, 10);
+		if (!bet || bet < 1) return this.say(room, text + "Your bet wasn't a valid number.");
+		//moneys obtainance thing
+		var moneystxt = fs.readFileSync('moneys.txt').toString();
+		var moneysmat = moneystxt.split('madooka magooka is an animu. moogn is a game. moko is a bird.\n\n')[1].split('\n');
+		var found = -1;
+		var overwrite = 'madooka magooka is an animu. moogn is a game. moko is a bird.\n';
+		for (var i = 0; i < moneysmat.length; i++) {
+			moneysmat[i] = moneysmat[i].split(': ');
+			if (toId(user.name) === moneysmat[i][0]) {
+				found = i;
+			}
+		}
+		if (found === -1) return this.say(room, text + "You aren't registered in our system yet! Type in \"('.w.') moneys\" to get 10 free moneys.");
+		var moneys = moneysmat[found][1];
+		if (bet > moneysmat[found][1]) return this.say(room, text + "Your bet is too large!");
+		//gambl coad
+		var ret = bet;
+		var gambl = Math.floor(65*Math.random());
+		text += "Test Gambl: " + gambl + "... ";
+		if (!gambl) {
+			text += "COMPLETELY DESTROYED. ";
+			ret = (2*bet > moneys) ? moneys : -2*bet;
+			if (ret > moneys) ret = moneys;
+		} else if (gambl < 9) {
+			text += "rip in pepperonis my son. ";
+			ret = -bet;
+		} else if (gambl < 21) {
+			text += "well you didn't lose everything. ";
+			ret = Math.ceil(-bet/2);
+		} else if (gambl < 45) {
+			text += "we have a money-back guarantee™. ";
+			ret = 0;
+		} else if (gambl < 57) {
+			text += "profit hype! ";
+			ret = Math.floor(bet/2);
+		} else {
+			text += "wao skillful af! ";
+			ret = bet;
+		}
+		//Process.
+		moneysmat[found][1] = parseInt(moneysmat[found][1]) + ret;
+		if (ret > 0) {
+			this.say(room, text + user.name + ' has gained ' + ret + ' moneys! ' + user.name + ' now has ' + moneysmat[found][1] + ' moneys.');
+		} else if (ret < 0) {
+			this.say(room, text + user.name + ' has lost ' + Math.abs(ret) + ' moneys! ' + user.name + ' now has ' + moneysmat[found][1] + ' moneys.');
+		} else {
+			this.say(room, text + user.name + 'didn\'t gain or lose any moneys.');
+		}
+		for (var j = 0; j < moneysmat.length; j++) {
+			overwrite += '\n' + moneysmat[j][0] + ': ' + moneysmat[j][1];
+		}
+		fs.writeFileSync("moneys.txt", overwrite);
+	},
+	dicefend: function(arg, user, room) {
+		if (room === user || toId(user.name) !== 'pikachuun' || !global.dicegame) return false;
+		this.say(room, 'Rip the current game (Forcibly ended)');
+		global.dicegame = false;
+		return;
+	}
 };
